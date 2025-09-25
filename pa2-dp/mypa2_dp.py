@@ -18,7 +18,7 @@ class ValueAgent:
             conv_thresh (float, optional): a threshold for convergence approximation. Defaults to 0.000001.            
         """        
         self.q = dict()
-        self.v = dict()
+        self.v = {s: 0.0 for s in mdp.states()}
         self.pi = dict()
         self.mdp = mdp
         self.thresh = conv_thresh
@@ -29,7 +29,15 @@ class ValueAgent:
 
         When n actions are available at state s, the probability of choosing an action should be 1/n.
         """        
-        pass
+        self.pi = {} # empty policy
+        for state in self.mdp.states(): # prob for each state
+            actions = self.mdp.actions(state) # all posisible actions at state
+            num_actions = len(actions)
+            if num_actions > 0:
+                prob = 1.0 / num_actions # equally distributed random probability
+                self.pi[state] = {action: prob for action in actions}
+            else:
+                self.pi[state] = {}
                     
     def computeq_fromv(self, v: dict[str,float]) -> dict[str,dict[str,float]]:
         """Given a state-value table, compute the action-state values.
@@ -41,7 +49,16 @@ class ValueAgent:
         Returns:
             dict[str,dict[str,float]]: a q value table {state:{action:q-value}}
         """
-        pass
+        q = {} # q table
+        for s in self.mdp.states():
+            q[s] = {} # map with in a state
+            for a in self.mdp.actions(s): # Every possible action at state s
+                expected_value = 0.0
+                for s_prime, prob in self.mdp.T(s, a): # Every possible next state and its probability
+                    reward = self.mdp.R(s, a, s_prime) # immediate reward (s -> a -> s_prime)
+                    expected_value += prob * (reward + self.mdp.gamma * v[s_prime]) # prob * (reward + gamma * V(s_prime))
+                q[s][a] = expected_value
+        return q
 
     def greedy_policy_improvement(self, v: dict[str,float]) -> dict[str,dict[str,float]]:
         """Greedy policy improvement algorithm. Given a state-value table, update the policy pi.
@@ -52,7 +69,18 @@ class ValueAgent:
         Returns:
             pi (dict[str,dict[str,float]]): a policy table {state:{action:probability}}
         """
-        pass
+        q = self.computeq_fomv(v) # compute q table from v table
+        new_pi = {} # new policy table
+        for s in self.mdp.states(): # for each state
+            actions = self.mdp.actions(s) # all possible actions at state s
+            if not actions:
+                new_pi[s] = {}
+                continue
+            best_action = max(q[s], key=q[s].get) # action with the highest q value
+            new_pi[s] = {action: 0.0 for action in actions}
+            new_pi[s][best_action] = 1.0 # greedy action
+        return new_pi
+
 
     def check_term(self, v: dict[str,float], next_v: dict[str,float]) -> bool:
         """Return True if the state value has NOT converged.
@@ -66,7 +94,12 @@ class ValueAgent:
         Returns:
             bool: True if continue; False if converged
         """
-        pass     
+        # Bellman error check for convergence
+        for s in v.keys(): 
+            if abs(next_v[s] - v[s]) > self.thresh:
+                return True
+        return False
+             
 
 
 class PIAgent(ValueAgent):
@@ -95,7 +128,28 @@ class PIAgent(ValueAgent):
         Returns:
             dict[str,float]: state-value table {state:v-value}
         """
-        pass
+        v = self.v.copy() # current v table
+        while True:
+            prev_v = v.copy() # previous v table
+            next_v = {}
+            for s in self.mdp.states():
+                v_s = 0.0
+                for a, action_prob in pi[s].items(): # for each action and its probs givein policy
+                    if action_prob == 0:
+                        continue
+                    q_sa = 0.0
+                    for s_prime, trans_prob in self.mdp.T(s, a): # for each possible next state and its transition prob
+                        reward = self.mdp.R(s, a, s_prime) # immediate reward
+                        q_sa += trans_prob * (reward + self.mdp.gamma * prev_v[s_prime]) # prob * (reward + gamma * V(s_prime))
+                    v_s += action_prob * q_sa # sum over all actions
+                next_v[s] = v_s
+            self.v_update_history.append(next_v.copy()) 
+            
+            if not self.check_term(prev_v, next_v):
+                v = next_v
+                break
+            v = next_v
+        return v
 
 
     def policy_iteration(self) -> dict[str,dict[str,float]]:
@@ -114,7 +168,14 @@ class PIAgent(ValueAgent):
         Returns:
             pi (dict[str,dict[str,float]]): a policy table {state:{action:probability}}
         """
-        pass
+        while True:
+            self.v = self.__iter_policy_eval(self.pi) # policy eval
+            new_pi = self.greedy_policy_improvement(self.v) # policy improvement
+
+            if self.pi == new_pi: 
+                break
+            self.pi = new_pi
+        return self.pi
 
 
 class VIAgent(ValueAgent):
