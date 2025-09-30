@@ -69,7 +69,7 @@ class ValueAgent:
         Returns:
             pi (dict[str,dict[str,float]]): a policy table {state:{action:probability}}
         """
-        q = self.computeq_fomv(v) # compute q table from v table
+        q = self.computeq_fromv(v) # compute q table from v table
         new_pi = {} # new policy table
         for s in self.mdp.states(): # for each state
             actions = self.mdp.actions(s) # all possible actions at state s
@@ -208,4 +208,35 @@ class VIAgent(ValueAgent):
         Returns:
             pi (dict[str,dict[str,float]]): a policy table {state:{action:probability}}
         """
-        pass
+        v = self.v.copy()
+        while True:
+            prev_v = v.copy()
+            next_v = {}
+            for s in self.mdp.states():
+                actions = self.mdp.actions(s)
+                if not actions:
+                    next_v[s] = 0.0
+                    continue
+
+                action_values = []
+
+                for a in actions:
+                    expected_value = 0.0
+                    for s_prime, prob in self.mdp.T(s, a):
+                        reward = self.mdp.R(s, a, s_prime)
+                        expected_value += prob * (reward + self.mdp.gamma * prev_v[s_prime])
+                    action_values.append(expected_value)
+                
+                next_v[s] = max(action_values) # best action value
+
+            self.v_update_history.append(next_v.copy())
+
+            if not self.check_term(prev_v, next_v):
+                v = next_v
+                break
+            v = next_v
+        
+        self.v = v
+        self.pi = self.greedy_policy_improvement(self.v) # get optimal policy from optimal
+
+        return self.pi 
